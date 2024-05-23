@@ -5,10 +5,18 @@ import (
 	"github.com/gkoh/smfgo/smf"
 	"github.com/pterm/pterm"
 	"log"
+	"os"
 )
 
 func main() {
+	if len(os.Args) != 2 {
+		log.Fatalf("usage: smfgo <service.xml>")
+		os.Exit(1)
+	}
+
+	var filename string = os.Args[1]
 	var err error
+
 	bundle := smf.ServiceBundle{
 		Type: "manifest",
 		Service: smf.Service{
@@ -195,8 +203,11 @@ func main() {
 
 	output, err := bundle.GenerateXML()
 	if err != nil {
-		fmt.Printf("error: %v\n", err)
+		log.Fatalf("error: %v\n", err)
 	}
 
-	fmt.Printf("%s", output)
+	err = os.WriteFile(filename, []byte(output), 0644)
+	if err != nil {
+		log.Fatalf("error: %v\n", err)
+	}
 }
