@@ -201,6 +201,12 @@ func main() {
 		}
 	}
 
+	// stability?
+	bundle.Service.Stability.Value, err = pterm.DefaultInteractiveSelect.WithDefaultText("Select service stability").WithOptions([]string{"Standard", "Stable", "Evolving", "Unstable", "External", "Obsolete"}).WithDefaultOption("Evolving").Show()
+	if err != nil {
+		log.Fatalf("error: %v\n", err)
+	}
+
 	output, err := bundle.GenerateXML()
 	if err != nil {
 		log.Fatalf("error: %v\n", err)
