@@ -25,26 +25,27 @@ type Service struct {
 	Template  Template
 }
 
-type SingleInstance struct {
-	CreateDefaultInstance struct {
-		XMLName xml.Name `xml:"create_default_instance"`
-		Enabled bool     `xml:"enabled,attr"`
-	}
-	SingleInstance string `xml:"single_instance"`
+type InstanceCore struct {
 	Dependencies   []Dependency
 	Context        *MethodContext
 	ExecMethods    []ExecMethod
 	PropertyGroups []PropertyGroup
 }
 
+type SingleInstance struct {
+	CreateDefaultInstance struct {
+		XMLName xml.Name `xml:"create_default_instance"`
+		Enabled bool     `xml:"enabled,attr"`
+	}
+	SingleInstance string `xml:"single_instance"`
+	InstanceCore
+}
+
 type Instance struct {
-	XMLName        xml.Name `xml:"instance"`
-	Name           string   `xml:"name,attr"`
-	Enabled        bool     `xml:"enabled,attr"`
-	Dependencies   []Dependency
-	Context        *MethodContext
-	ExecMethods    []ExecMethod
-	PropertyGroups []PropertyGroup
+	XMLName xml.Name `xml:"instance"`
+	Name    string   `xml:"name,attr"`
+	Enabled bool     `xml:"enabled,attr"`
+	InstanceCore
 }
 
 type Stability struct {
@@ -138,20 +139,26 @@ type LocText struct {
 	Text    string   `xml:",chardata"`
 }
 
-var DefaultDependencyNetwork Dependency = Dependency{
-	Name: "network", Grouping: "require_all", RestartOn: "error", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/milestone/network:default"}}
+var (
+	DependencyLoopback Dependency = Dependency{
+		Name: "loopback", Grouping: "require_any", RestartOn: "error", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/network/loopback"}}
 
-var DefaultDependencyLocalFS Dependency = Dependency{
-	Name: "filesystem-local", Grouping: "require_all", RestartOn: "none", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/system/filesystem/local:default"}}
+	DependencyNetwork Dependency = Dependency{
+		Name: "network", Grouping: "optional_all", RestartOn: "error", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/milestone/network:default"}}
 
-var DefaultDependencyAutoFS Dependency = Dependency{
-	Name: "autofs", Grouping: "optional_all", RestartOn: "none", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/system/filesystem/autofs:default"}}
+	DependencyLocalFS Dependency = Dependency{
+		Name: "filesystem-local", Grouping: "require_all", RestartOn: "none", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/system/filesystem/local:default"}}
 
-var DefaultDependencies []Dependency = []Dependency{
-	DefaultDependencyNetwork,
-	DefaultDependencyLocalFS,
-	DefaultDependencyAutoFS,
-}
+	DependencyAutoFS Dependency = Dependency{
+		Name: "autofs", Grouping: "optional_all", RestartOn: "none", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/system/filesystem/autofs:default"}}
+
+	DefaultDependencies []Dependency = []Dependency{
+		DependencyLoopback,
+		DependencyNetwork,
+		DependencyLocalFS,
+		DependencyAutoFS,
+	}
+)
 
 var DefaultPropertyGroups []PropertyGroup = []PropertyGroup{
 	{

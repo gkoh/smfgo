@@ -8,13 +8,124 @@ import (
 	"os"
 )
 
-func main() {
-	if len(os.Args) != 2 {
-		log.Fatalf("usage: smfgo <service.xml>")
-		os.Exit(1)
+func askInstanceCore(instance *smf.InstanceCore) {
+	// ask config file
+	config_path, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Full path to configuration file, blank if no configuration file").Show()
+	if err != nil {
+		log.Fatalf("%v", err)
+	} else if config_path != "" {
+		pg := smf.PropertyGroup{Name: "config", Type: "application"}
+		pg.PropVals = append(pg.PropVals, smf.PropVal{Name: "file", Type: "astring", Value: config_path})
+		instance.PropertyGroups = append(instance.PropertyGroups, pg)
 	}
 
-	var filename string = os.Args[1]
+	// ask methods for start/stop
+	methods := [][]string{{"start", ""}, {"stop", ":kill"}}
+	for _, method := range methods {
+		var exec string = ""
+		for exec == "" {
+			exec, err = pterm.DefaultInteractiveTextInput.WithDefaultText(fmt.Sprintf("Full command to %s the service, use %%{config/file} to reference configuration file, eg. '/usr/bin/myservice --%s %%{config/file}'", method[0], method[0])).WithDefaultValue(method[1]).Show()
+			if err != nil {
+				log.Fatalf("%v", err)
+			} else if exec != "" {
+				em := smf.ExecMethod{Name: method[0], Type: "method", Exec: exec, TimeOutSeconds: 60}
+				instance.ExecMethods = append(instance.ExecMethods, em)
+			}
+		}
+	}
+
+	// ask envvars
+	add_envvars, err := pterm.DefaultInteractiveConfirm.WithDefaultText("Add environment variables for method execution?").Show()
+	if err != nil {
+		log.Fatalf("%v", err)
+	} else if add_envvars {
+		for true {
+			name, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Environment variable name (leave blank to continue)").Show()
+			if err != nil {
+				log.Fatalf("%v", err)
+			} else if name == "" {
+				break
+			} else {
+				value, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Environment variable value").Show()
+				if err != nil {
+					log.Fatalf("%v", err)
+				} else {
+					if instance.Context == nil {
+						instance.Context = &smf.MethodContext{Environment: &smf.MethodEnvironment{}}
+					}
+					instance.Context.Environment.EnvVar = append(instance.Context.Environment.EnvVar, smf.EnvVar{Name: name, Value: value})
+				}
+			}
+		}
+	}
+
+	// ask startd model (transient, child, contract)
+	startd_model, err := pterm.DefaultInteractiveSelect.WithDefaultText("Select service managment method").WithOptions([]string{"transient", "child", "contract"}).WithDefaultOption("child").Show()
+	if err != nil {
+		log.Fatalf("%v", err)
+	} else {
+		pv := smf.PropVal{Name: "duration", Type: "astring"}
+		switch startd_model {
+		case "transient":
+			pv.Value = "transient"
+		case "child":
+			pv.Value = "child"
+		case "contract":
+			pv.Value = "contract"
+		}
+		pg := smf.PropertyGroup{Name: "startd", Type: "framework"}
+		pg.PropVals = append(pg.PropVals, pv, smf.PropVal{Name: "ignore_error", Type: "astring", Value: "core,signal"})
+		instance.PropertyGroups = append(instance.PropertyGroups, pg)
+	}
+
+	// ask method credentials (user, group)
+	user, err := pterm.DefaultInteractiveTextInput.WithDefaultText("User for execution methods").Show()
+	if err != nil {
+		log.Fatalf("%v", err)
+	} else if user != "" {
+		if instance.Context == nil {
+			instance.Context = &smf.MethodContext{}
+		}
+		if instance.Context.Credential == nil {
+			instance.Context.Credential = &smf.MethodCredential{}
+		}
+		instance.Context.Credential.User = user
+	}
+
+	group, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Group for execution methods").Show()
+	if err != nil {
+		log.Fatalf("%v", err)
+	} else if group != "" {
+		if instance.Context == nil {
+			instance.Context = &smf.MethodContext{}
+		}
+		if instance.Context.Credential == nil {
+			instance.Context.Credential = &smf.MethodCredential{}
+		}
+		instance.Context.Credential.Group = group
+	}
+
+	// depends network/localfs?
+	deps := []string{"network", "local filesystems"}
+	for _, dep := range deps {
+		enable, err := pterm.DefaultInteractiveConfirm.WithDefaultText(fmt.Sprintf("Does this service depend on %s being ready?", dep)).WithDefaultValue(true).Show()
+		if err != nil {
+			log.Fatalf("%v", err)
+		} else {
+			if enable {
+				switch dep {
+				case "network":
+					instance.Dependencies = append(instance.Dependencies, smf.DependencyLoopback, smf.DependencyNetwork)
+
+				case "local filesystems":
+					instance.Dependencies = append(instance.Dependencies, smf.DependencyLocalFS)
+				}
+			}
+		}
+	}
+}
+
+func askServiceBundle() (smf.ServiceBundle, error) {
 	var err error
 
 	bundle := smf.ServiceBundle{
@@ -37,172 +148,93 @@ func main() {
 	// ask bundle name
 	bundle.Name, err = pterm.DefaultInteractiveTextInput.WithDefaultText("The name of the service bundle").WithDefaultValue("mybundle").Show()
 	if err != nil {
-		log.Fatalf("%v", err)
+		return bundle, err
 	}
 
 	// ask service name
 	bundle.Service.Name, err = pterm.DefaultInteractiveTextInput.WithDefaultText("The name of the service").WithDefaultValue("component/myservice").Show()
 	if err != nil {
-		log.Fatalf("%v", err)
+		return bundle, err
 	}
 
 	// ask service manifest version
 	bundle.Service.Version, err = pterm.DefaultInteractiveTextInput.WithDefaultText("The version of the service manifest").WithDefaultValue("1").Show()
 	if err != nil {
-		log.Fatalf("%v", err)
+		return bundle, err
 	}
 
 	// ask for human readable name
 	bundle.Service.Template.CommonName.LocText.Text, err = pterm.DefaultInteractiveTextInput.WithDefaultText("The human readable name of the service").WithDefaultValue("My service.").Show()
 	if err != nil {
-		log.Fatalf("%v", err)
+		return bundle, err
 	}
 
 	// ask multi instance
 	multi_instance, err := pterm.DefaultInteractiveConfirm.WithDefaultText("Does this service support multiple instances?").Show()
 	if err != nil {
-		log.Fatalf("%v", err)
+		return bundle, err
 	} else {
 		if !multi_instance {
 			bundle.Service.SingleInstance = &smf.SingleInstance{}
-		}
-	}
-
-	// ask config file
-	config_path, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Full path to configuration file, blank if no configuration file").Show()
-	if err != nil {
-		log.Fatalf("%v", err)
-	} else if config_path != "" {
-		pg := smf.PropertyGroup{Name: "config", Type: "application"}
-		pg.PropVals = append(pg.PropVals, smf.PropVal{Name: "file", Type: "astring", Value: config_path})
-		if bundle.Service.SingleInstance != nil {
-			bundle.Service.SingleInstance.PropertyGroups = append(bundle.Service.SingleInstance.PropertyGroups, pg)
-		} else {
-			//bundle.Service.Instance.PropertyGroups = append(bundle.Service.Instance.PropertyGroups, pg)
-		}
-	}
-
-	// ask methods for start/stop
-	methods := [][]string{{"start", ""}, {"stop", ":kill"}}
-	for _, method := range methods {
-		var exec string = ""
-		for exec == "" {
-			exec, err = pterm.DefaultInteractiveTextInput.WithDefaultText(fmt.Sprintf("Full command to %s the service, use %%{config/file} to reference configuration file, eg. '/usr/bin/myservice --%s %%{config/file}'", method[0], method[0])).WithDefaultValue(method[1]).Show()
+			// enable by default?
+			enable, err := pterm.DefaultInteractiveConfirm.WithDefaultText("Enable the service instance by default?").Show()
 			if err != nil {
-				log.Fatalf("%v", err)
-			} else if exec != "" {
-				if bundle.Service.SingleInstance != nil {
-					em := smf.ExecMethod{Name: method[0], Type: "method", Exec: exec, TimeOutSeconds: 60}
-					bundle.Service.SingleInstance.ExecMethods = append(bundle.Service.SingleInstance.ExecMethods, em)
-				}
-			}
-		}
-	}
-
-	// ask envvars
-	add_envvars, err := pterm.DefaultInteractiveConfirm.WithDefaultText("Add environment variables for method execution?").Show()
-	if err != nil {
-		log.Fatalf("%v", err)
-	} else if add_envvars {
-		for true {
-			name, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Environment variable name (leave blank to continue)").Show()
-			if err != nil {
-				log.Fatalf("%v", err)
-			} else if name == "" {
-				break
+				return bundle, err
 			} else {
-				value, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Environment variable value").Show()
-				if err != nil {
-					log.Fatalf("%v", err)
-				} else {
-					if bundle.Service.Context == nil {
-						bundle.Service.Context = &smf.MethodContext{Environment: &smf.MethodEnvironment{}}
-					}
-					bundle.Service.Context.Environment.EnvVar = append(bundle.Service.Context.Environment.EnvVar, smf.EnvVar{Name: name, Value: value})
-				}
+				bundle.Service.SingleInstance.CreateDefaultInstance.Enabled = enable
 			}
-		}
-	}
-
-	// ask startd model (transient, child, contract)
-	startd_model, err := pterm.DefaultInteractiveSelect.WithDefaultText("Select service managment method").WithOptions([]string{"transient", "child", "contract"}).WithDefaultOption("child").Show()
-	if err != nil {
-		log.Fatalf("%v", err)
-	} else {
-		if bundle.Service.SingleInstance != nil {
-			pv := smf.PropVal{Name: "duration", Type: "astring"}
-			switch startd_model {
-			case "transient":
-				pv.Value = "transient"
-			case "child":
-				pv.Value = "child"
-			case "contract":
-				pv.Value = "contract"
-			}
-			pg := smf.PropertyGroup{Name: "startd", Type: "framework"}
-			pg.PropVals = append(pg.PropVals, pv, smf.PropVal{Name: "ignore_error", Type: "astring", Value: "core,signal"})
-			bundle.Service.SingleInstance.PropertyGroups = append(bundle.Service.SingleInstance.PropertyGroups, pg)
-		}
-	}
-
-	// ask method credentials (user, group)
-	user, err := pterm.DefaultInteractiveTextInput.WithDefaultText("User for execution methods").Show()
-	if err != nil {
-		log.Fatalf("%v", err)
-	} else if user != "" {
-		if bundle.Service.Context == nil {
-			bundle.Service.Context = &smf.MethodContext{}
-		}
-		if bundle.Service.Context.Credential == nil {
-			bundle.Service.Context.Credential = &smf.MethodCredential{}
-		}
-		bundle.Service.Context.Credential.User = user
-	}
-
-	group, err := pterm.DefaultInteractiveTextInput.WithDefaultText("Group for execution methods").Show()
-	if err != nil {
-		log.Fatalf("%v", err)
-	} else if group != "" {
-		if bundle.Service.Context == nil {
-			bundle.Service.Context = &smf.MethodContext{}
-		}
-		if bundle.Service.Context.Credential == nil {
-			bundle.Service.Context.Credential = &smf.MethodCredential{}
-		}
-		bundle.Service.Context.Credential.Group = group
-	}
-
-	// depends network/localfs?
-	deps := []string{"network", "local filesystems"}
-	for _, dep := range deps {
-		enable, err := pterm.DefaultInteractiveConfirm.WithDefaultText(fmt.Sprintf("Does this service depend on %s being ready?", dep)).WithDefaultValue(true).Show()
-		if err != nil {
-			log.Fatalf("%v", err)
+			// complete remaining single instance configuration
+			askInstanceCore(&bundle.Service.SingleInstance.InstanceCore)
 		} else {
-			if bundle.Service.SingleInstance != nil && enable {
-				switch dep {
-				case "network":
-					bundle.Service.SingleInstance.Dependencies = append(bundle.Service.SingleInstance.Dependencies, smf.DefaultDependencyNetwork)
-
-				case "local filesystems":
-					bundle.Service.SingleInstance.Dependencies = append(bundle.Service.SingleInstance.Dependencies, smf.DefaultDependencyLocalFS)
+			for i := 0; ; i++ {
+				// ask instance name, blank to exit, need at least one
+				name, err := pterm.DefaultInteractiveTextInput.WithDefaultText("The name of the instance name (blank to continue)").WithDefaultValue(fmt.Sprintf("myinstance%d", i)).Show()
+				if err != nil {
+					return bundle, err
+				} else if name == "" {
+					if len(bundle.Service.Instance) < 1 {
+						// need at least one
+						i--
+						continue
+					}
+					// blank == no more instances
+					break
 				}
-			}
-		}
-	}
 
-	// enable default?
-	enable, err := pterm.DefaultInteractiveConfirm.WithDefaultText("Enable the service instance by default?").Show()
-	if err != nil {
-		log.Fatalf("%v", err)
-	} else {
-		if bundle.Service.SingleInstance != nil {
-			bundle.Service.SingleInstance.CreateDefaultInstance.Enabled = enable
+				instance := smf.Instance{Name: name}
+				askInstanceCore(&instance.InstanceCore)
+
+				// enable default?
+				enable, err := pterm.DefaultInteractiveConfirm.WithDefaultText("Enable the service instance by default?").Show()
+				if err != nil {
+					return bundle, err
+				} else {
+					instance.Enabled = enable
+				}
+
+				bundle.Service.Instance = append(bundle.Service.Instance, instance)
+			}
 		}
 	}
 
 	// stability?
 	bundle.Service.Stability.Value, err = pterm.DefaultInteractiveSelect.WithDefaultText("Select service stability").WithOptions([]string{"Standard", "Stable", "Evolving", "Unstable", "External", "Obsolete"}).WithDefaultOption("Evolving").Show()
+	if err != nil {
+		return bundle, err
+	}
+
+	return bundle, nil
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		log.Fatalf("usage: smfgo <service.xml>")
+		os.Exit(1)
+	}
+
+	filename := os.Args[1]
+
+	bundle, err := askServiceBundle()
 	if err != nil {
 		log.Fatalf("error: %v\n", err)
 	}
