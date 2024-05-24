@@ -24,5 +24,12 @@ jobs:
         gofmt-path: ./
         gofmt-flags: -l -d
 
-    - name: Build
+    - name: Build (linux)
       run: go build -o smfgo cmd/smfgo.go
+      env:
+        GOOS: linux
+
+    - name: Build (illumos)
+      run: go build -o smfgo cmd/smfgo.go
+      env:
+        GOOS: illumos
