@@ -60,7 +60,7 @@ func askInstanceCore(instance *smf.InstanceCore) {
 	}
 
 	// ask startd model (transient, child, contract)
-	startd_model, err := pterm.DefaultInteractiveSelect.WithDefaultText("Select service managment method").WithOptions([]string{"transient", "child", "contract"}).WithDefaultOption("child").Show()
+	startd_model, err := pterm.DefaultInteractiveSelect.WithDefaultText("Select service management method").WithOptions([]string{"transient", "child", "contract"}).WithDefaultOption("child").Show()
 	if err != nil {
 		log.Fatalf("%v", err)
 	} else {
