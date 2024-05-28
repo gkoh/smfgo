@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// GenerateXML marshals the service bundle into an XML multiline string.
 func (b *ServiceBundle) GenerateXML() (string, error) {
 	output, err := xml.MarshalIndent(b, "", "  ")
 	if err != nil {

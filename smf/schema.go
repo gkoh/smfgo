@@ -1,3 +1,5 @@
+// Package smf attempts to map the SMF service bundle DTD into equivalent Go
+// structs for XML (un)marshalling.
 package smf
 
 import (
@@ -140,19 +142,19 @@ type LocText struct {
 }
 
 var (
-	DependencyLoopback Dependency = Dependency{
+	DependencyLoopback = Dependency{
 		Name: "loopback", Grouping: "require_any", RestartOn: "error", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/network/loopback"}}
 
-	DependencyNetwork Dependency = Dependency{
+	DependencyNetwork = Dependency{
 		Name: "network", Grouping: "optional_all", RestartOn: "error", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/milestone/network:default"}}
 
-	DependencyLocalFS Dependency = Dependency{
+	DependencyLocalFS = Dependency{
 		Name: "filesystem-local", Grouping: "require_all", RestartOn: "none", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/system/filesystem/local:default"}}
 
-	DependencyAutoFS Dependency = Dependency{
+	DependencyAutoFS = Dependency{
 		Name: "autofs", Grouping: "optional_all", RestartOn: "none", Type: "service", ServiceFMRI: ServiceFMRI{Value: "svc:/system/filesystem/autofs:default"}}
 
-	DefaultDependencies []Dependency = []Dependency{
+	DefaultDependencies = []Dependency{
 		DependencyLoopback,
 		DependencyNetwork,
 		DependencyLocalFS,
@@ -160,7 +162,7 @@ var (
 	}
 )
 
-var DefaultPropertyGroups []PropertyGroup = []PropertyGroup{
+var DefaultPropertyGroups = []PropertyGroup{
 	{
 		Name: "startd",
 		Type: "framework",
